@@ -22,7 +22,7 @@
 
 O deploy esta disponível em:
 
-👉 [Acessar Pokédex na Vercel](#)
+👉 [Acessar Pokédex](https://mypokedex-seven.vercel.app/)
 
 ## Como rodar localmente
 
