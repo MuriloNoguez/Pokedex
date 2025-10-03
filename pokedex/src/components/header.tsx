@@ -48,14 +48,7 @@ const Header: React.FC<HeaderProps> = ({
     onFilterByType?.(type);
   };
 
-  const clearFilters = () => {
-    setSearchTerm('');
-    setSelectedGeneration(null);
-    setSelectedType(null);
-    onSearch?.('');
-    onFilterByGeneration?.(null);
-    onFilterByType?.(null);
-  };
+
 
   return (
     <header className="bg-gradient-to-r from-red-500 to-blue-500 shadow-lg sticky top-0 z-50 p-4">
@@ -126,15 +119,7 @@ const Header: React.FC<HeaderProps> = ({
             </select>
           </div>
 
-          {/* Botão Limpar Filtros */}
-          {(searchTerm || selectedGeneration || selectedType) && (
-            <button 
-              onClick={clearFilters} 
-              className="bg-white/20 text-white px-3 py-1 rounded-lg text-sm font-semibold hover:bg-white/30 transition-colors"
-            >
-              Limpar
-            </button>
-          )}
+
         </div>
       </div>
     </header>
