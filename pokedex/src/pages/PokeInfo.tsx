@@ -50,16 +50,57 @@ interface PokemonSpecies {
       name: string;
     };
   }>;
+  evolution_chain: {
+    url: string;
+  };
+}
+
+interface EvolutionChain {
+  chain: ChainLink;
+}
+
+interface ChainLink {
+  species: {
+    name: string;
+    url: string;
+  };
+  evolves_to: ChainLink[];
+  evolution_details: Array<{
+    min_level?: number;
+    trigger: {
+      name: string;
+    };
+    item?: {
+      name: string;
+    };
+    held_item?: {
+      name: string;
+    };
+    time_of_day?: string;
+    location?: {
+      name: string;
+    };
+    min_happiness?: number;
+  }>;
+}
+
+interface EvolutionPokemon {
+  id: number;
+  name: string;
+  image: string;
+  types: string[];
 }
 
 interface PokeInfoProps {
   pokemonId: number;
   onBack: () => void;
+  onPokemonClick?: (id: number) => void;
 }
 
-const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack }) => {
+const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack, onPokemonClick }) => {
   const [pokemon, setPokemon] = useState<PokemonDetail | null>(null);
   const [species, setSpecies] = useState<PokemonSpecies | null>(null);
+  const [evolutionChain, setEvolutionChain] = useState<EvolutionPokemon[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -121,14 +162,42 @@ const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack }) => {
     return description ? description.flavor_text.replace(/\f/g, ' ').replace(/\n/g, ' ') : 'Descrição não disponível';
   };
 
-  const getGenus = () => {
-    if (!species) return 'Pokémon';
+
+
+  const extractPokemonIdFromUrl = (url: string): number => {
+    const matches = url.match(/\/pokemon-species\/(\d+)\//);
+    return matches ? parseInt(matches[1], 10) : 0;
+  };
+
+  const processEvolutionChain = async (chain: ChainLink): Promise<EvolutionPokemon[]> => {
+    const evolutionPokemon: EvolutionPokemon[] = [];
     
-    const enGenus = species.genera.find(
-      genus => genus.language.name === 'en'
-    );
+    const processChainLink = async (link: ChainLink) => {
+      const pokemonId = extractPokemonIdFromUrl(link.species.url);
+      
+      try {
+        // Buscar dados do Pokémon
+        const pokemonResponse = await fetch(`https://pokeapi.co/api/v2/pokemon/${pokemonId}`);
+        const pokemonData = await pokemonResponse.json();
+        
+        evolutionPokemon.push({
+          id: pokemonData.id,
+          name: pokemonData.name,
+          image: pokemonData.sprites.other?.['official-artwork']?.front_default || pokemonData.sprites.front_default,
+          types: pokemonData.types.map((type: any) => type.type.name)
+        });
+        
+        // Processar evoluções
+        for (const evolution of link.evolves_to) {
+          await processChainLink(evolution);
+        }
+      } catch (error) {
+        console.error(`Error fetching pokemon ${pokemonId}:`, error);
+      }
+    };
     
-    return enGenus?.genus || 'Pokémon';
+    await processChainLink(chain);
+    return evolutionPokemon;
   };
 
   useEffect(() => {
@@ -136,6 +205,7 @@ const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack }) => {
       try {
         setLoading(true);
         setError(null);
+
 
         // Buscar dados do Pokémon
         const pokemonResponse = await fetch(`https://pokeapi.co/api/v2/pokemon/${pokemonId}`);
@@ -146,6 +216,14 @@ const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack }) => {
         const speciesResponse = await fetch(pokemonData.species.url);
         const speciesData = await speciesResponse.json();
         setSpecies(speciesData);
+
+        // Buscar cadeia evolutiva
+        if (speciesData.evolution_chain?.url) {
+          const evolutionResponse = await fetch(speciesData.evolution_chain.url);
+          const evolutionData: EvolutionChain = await evolutionResponse.json();
+          const evolutionPokemon = await processEvolutionChain(evolutionData.chain);
+          setEvolutionChain(evolutionPokemon);
+        }
       } catch (err) {
         setError('Erro ao carregar detalhes do Pokémon');
         console.error('Error fetching Pokemon details:', err);
@@ -220,13 +298,12 @@ const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack }) => {
                   {pokemon.types.map((type) => (
                     <span
                       key={type.type.name}
-                      className={`px-4 py-2 rounded-full text-white font-medium ${getTypeColor(type.type.name)}`}
+                      className={`px-4 py-2 rounded-md text-white font-medium ${getTypeColor(type.type.name)}`}
                     >
                       {type.type.name}
                     </span>
                   ))}
                 </div>
-                <p className="text-gray-600 font-medium">{getGenus()}</p>
               </div>
             </div>
 
@@ -275,8 +352,61 @@ const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack }) => {
                   ))}
                 </div>
               </div>
+
+
             </div>
           </div>
+
+          {/* Árvore Evolutiva */}
+          {evolutionChain.length > 1 && (
+            <div className="p-8 border-t border-gray-200">
+              <h3 className="text-xl font-semibold text-gray-800 mb-6">Cadeia Evolutiva</h3>
+              <div className="flex flex-wrap justify-center items-center gap-4">
+                {evolutionChain.map((evo, index) => (
+                  <React.Fragment key={evo.id}>
+                    {/* Card do Pokémon na evolução */}
+                    <div className="flex flex-col items-center">
+                      <div 
+                        className={`bg-white rounded-lg shadow-md p-4 text-center hover:shadow-lg transition-all cursor-pointer transform hover:scale-105 ${
+                          evo.id === pokemonId ? 'ring-2 ring-blue-500 bg-blue-50' : ''
+                        }`}
+                        onClick={() => onPokemonClick?.(evo.id)}
+                      >
+                        <div className="w-20 h-20 mx-auto mb-2 bg-gray-100 rounded-lg flex items-center justify-center">
+                          <img 
+                            src={evo.image} 
+                            alt={evo.name}
+                            className="w-16 h-16 object-contain"
+                            loading="lazy"
+                          />
+                        </div>
+                        <p className="text-sm font-medium text-gray-800 capitalize">
+                          {evo.name}
+                        </p>
+                        <div className="flex gap-1 justify-center mt-2">
+                          {evo.types.map((type) => (
+                            <span
+                              key={type}
+                              className={`px-2 py-1 rounded-full text-white text-xs font-medium ${getTypeColor(type)}`}
+                            >
+                              {type}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Seta de evolução (não mostrar na última) */}
+                    {index < evolutionChain.length - 1 && (
+                      <div className="text-gray-400 text-2xl">
+                        →
+                      </div>
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Stats */}
           <div className="p-8 bg-gray-50">
@@ -302,6 +432,9 @@ const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack }) => {
               ))}
             </div>
           </div>
+        {/* Árvore evolutiva */}
+        
+
         </div>
       </div>
     </div>

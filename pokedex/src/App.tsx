@@ -36,6 +36,7 @@ function App() {
       <PokeInfo 
         pokemonId={selectedPokemonId} 
         onBack={handleBackToList} 
+        onPokemonClick={handlePokemonClick}
       />
     );
   }
