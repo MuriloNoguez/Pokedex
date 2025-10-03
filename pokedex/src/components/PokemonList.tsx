@@ -23,9 +23,10 @@ interface PokemonListProps {
   searchTerm: string;
   selectedGeneration: number | null;
   selectedType: string | null;
+  onPokemonClick?: (id: number) => void;
 }
 
-const PokemonList: React.FC<PokemonListProps> = ({ searchTerm, selectedGeneration, selectedType }) => {
+const PokemonList: React.FC<PokemonListProps> = ({ searchTerm, selectedGeneration, selectedType, onPokemonClick }) => {
   const [pokemon, setPokemon] = useState<Pokemon[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -153,6 +154,7 @@ const PokemonList: React.FC<PokemonListProps> = ({ searchTerm, selectedGeneratio
             name={p.name}
             image={p.sprites.other?.['official-artwork']?.front_default || p.sprites.front_default}
             types={p.types.map(type => type.type.name)}
+            onClick={onPokemonClick}
           />
         ))}
       </div>

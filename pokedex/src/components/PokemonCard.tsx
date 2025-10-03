@@ -5,9 +5,10 @@ interface PokemonCardProps {
   name: string;
   image: string;
   types: string[];
+  onClick?: (id: number) => void;
 }
 
-const PokemonCard: React.FC<PokemonCardProps> = ({ id, name, image, types }) => {
+const PokemonCard: React.FC<PokemonCardProps> = ({ id, name, image, types, onClick }) => {
   const formatId = (id: number) => `#${id.toString().padStart(3, '0')}`;
   
   const getTypeColor = (type: string) => {
@@ -35,7 +36,10 @@ const PokemonCard: React.FC<PokemonCardProps> = ({ id, name, image, types }) => 
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 text-center">
+    <div 
+      className="bg-white rounded-lg shadow-md hover:shadow-lg transition-all cursor-pointer p-6 text-center transform hover:scale-105"
+      onClick={() => onClick?.(id)}
+    >
       <div className="mb-3">
         <span className="text-sm text-gray-500 font-medium">{formatId(id)}</span>
       </div>

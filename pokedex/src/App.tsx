@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import Header from './components/header'
 import PokemonList from './components/PokemonList'
+import PokeInfo from './pages/PokeInfo'
 import './App.css'
 
 function App() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedGeneration, setSelectedGeneration] = useState<number | null>(null)
   const [selectedType, setSelectedType] = useState<string | null>(null)
+  const [selectedPokemonId, setSelectedPokemonId] = useState<number | null>(null)
 
   const handleSearch = (term: string) => {
     setSearchTerm(term)
@@ -20,6 +22,25 @@ function App() {
     setSelectedType(type)
   }
 
+  const handlePokemonClick = (id: number) => {
+    setSelectedPokemonId(id)
+  }
+
+  const handleBackToList = () => {
+    setSelectedPokemonId(null)
+  }
+
+  // Se um Pokémon foi selecionado, mostrar a página de detalhes
+  if (selectedPokemonId) {
+    return (
+      <PokeInfo 
+        pokemonId={selectedPokemonId} 
+        onBack={handleBackToList} 
+      />
+    );
+  }
+
+  // Caso contrário, mostrar a lista de Pokémon
   return (
     <div className="min-h-screen bg-gray-100">
       <Header 
@@ -56,6 +77,7 @@ function App() {
             searchTerm={searchTerm}
             selectedGeneration={selectedGeneration}
             selectedType={selectedType}
+            onPokemonClick={handlePokemonClick}
           />
         </div>
       </main>
