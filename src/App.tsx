@@ -43,14 +43,14 @@ function App() {
 
   // Caso contrário, mostrar a lista de Pokémon
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="h-screen bg-gray-100 flex flex-col">
       <Header 
         onSearch={handleSearch}
         onFilterByGeneration={handleFilterByGeneration}
         onFilterByType={handleFilterByType}
       />
       
-      <main className="p-6">
+      <main className="overflow-auto flex-1 p-6">
         <div className="max-w-7xl mx-auto">
           {/* Display dos filtros ativos */}
           {(searchTerm || selectedGeneration || selectedType) && (

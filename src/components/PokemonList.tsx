@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import PokemonCard from './PokemonCard';
+import { pokemonApi } from '../utils/api';
+import { config } from '../config/app';
 
 interface Pokemon {
   id: number;
@@ -19,6 +21,14 @@ interface Pokemon {
   }>;
 }
 
+interface GenerationBlock {
+  id: number;
+  name: string;
+  pokemons: Pokemon[];
+  loading: boolean;
+  error: string | null;
+}
+
 interface PokemonListProps {
   searchTerm: string;
   selectedGeneration: number | null;
@@ -27,136 +37,253 @@ interface PokemonListProps {
 }
 
 const PokemonList: React.FC<PokemonListProps> = ({ searchTerm, selectedGeneration, selectedType, onPokemonClick }) => {
-  const [pokemon, setPokemon] = useState<Pokemon[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Usa as gerações definidas em config
+  const generations = config.generations;
 
-  const fetchPokemon = async () => {
+  const [loadedGenerations, setLoadedGenerations] = useState<GenerationBlock[]>([]);
+  const [globalLoading, setGlobalLoading] = useState(false);
+  const loadingGenRef = React.useRef<Set<number>>(new Set());
+  const loadingTypeRef = React.useRef<boolean>(false);
+  const TYPE_BLOCK_ID = -1;
+
+  // Carrega uma geração específica (busca lista e detalhes em lotes)
+  const loadGeneration = async (genId: number) => {
+    // evitar duplicatas e condições de corrida
+    if (loadingGenRef.current.has(genId)) return;
+    if (loadedGenerations.some(g => g.id === genId)) return;
+
+    const gen = generations.find(g => g.id === genId);
+    if (!gen) return;
+
+    // marcar como em progresso imediatamente
+    loadingGenRef.current.add(genId);
+
+    setLoadedGenerations(prev => {
+      if (prev.some(g => g.id === genId)) return prev;
+      return [...prev, { id: gen.id, name: gen.name, pokemons: [], loading: true, error: null }];
+    });
+
     try {
-      setLoading(true);
-      setError(null);
-      
-      // Buscar TODOS os Pokémon de uma vez (1000+ Pokémon)
-      const response = await fetch('https://pokeapi.co/api/v2/pokemon?limit=1500&offset=0');
-      const data = await response.json();
-      
-      // Buscar detalhes em lotes para melhor performance
-      const batchSize = 50;
-      const pokemonDetails: Pokemon[] = [];
-      
-      // Limitar a 1000 Pokémon para não sobrecarregar
-      const pokemonToFetch = data.results.slice(0, 1000);
-      
-      for (let i = 0; i < pokemonToFetch.length; i += batchSize) {
-        const batch = pokemonToFetch.slice(i, i + batchSize);
+      setGlobalLoading(true);
+
+      const offset = gen.range[0] - 1;
+      const limit = gen.range[1] - gen.range[0] + 1;
+
+      const listResponse = await pokemonApi.getPokemonList(limit, offset);
+
+      const batchSize = 30;
+      const details: Pokemon[] = [];
+
+      const results = listResponse.results || [];
+
+      for (let i = 0; i < results.length; i += batchSize) {
+        const batch = results.slice(i, i + batchSize);
         const batchDetails = await Promise.all(
-          batch.map(async (pokemon: { url: string }) => {
-            const pokemonResponse = await fetch(pokemon.url);
-            return pokemonResponse.json();
+          batch.map(async (item: { url: string }) => {
+            try {
+              // extrair id da url
+              const parts = item.url.split('/').filter(Boolean);
+              const id = parts[parts.length - 1];
+              return await pokemonApi.getPokemon(id);
+            } catch (e) {
+              console.error('Erro ao buscar Pokémon detalhe:', e);
+              return null;
+            }
           })
         );
-        pokemonDetails.push(...batchDetails);
-        
-        // Pequena pausa para não sobrecarregar a API
+
+        details.push(...batchDetails.filter(Boolean) as Pokemon[]);
         await new Promise(resolve => setTimeout(resolve, 50));
       }
+
+      setLoadedGenerations(prev => prev.map(b => b.id === gen.id ? { ...b, pokemons: details, loading: false, error: null } : b));
       
-      setPokemon(pokemonDetails);
-    } catch (err) {
-      setError('Erro ao carregar Pokémon. Tente novamente.');
-      console.error('Error fetching Pokemon:', err);
+      // Ajustar scroll para que a seção carregada não fique coberta pelo header sticky
+      setTimeout(() => {
+        try {
+          const el = document.getElementById(`generation-${gen.id}`);
+          if (el) {
+            const header = document.querySelector('header');
+            const headerHeight = header ? (header as HTMLElement).offsetHeight : 80;
+            const rect = el.getBoundingClientRect();
+            const offsetTop = rect.top + window.scrollY - headerHeight - 12; // pequeno espaçamento
+            window.scrollTo({ top: offsetTop, behavior: 'smooth' });
+          }
+        } catch (e) {
+          console.warn('Scroll adjustment failed', e);
+        }
+      }, 100);
+    } catch (err: any) {
+      console.error('Erro ao carregar geração:', err);
+      setLoadedGenerations(prev => prev.map(b => b.id === gen.id ? { ...b, loading: false, error: 'Erro ao carregar geração' } : b));
     } finally {
-      setLoading(false);
+      // remover marcação de progresso
+      loadingGenRef.current.delete(genId);
+      setGlobalLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchPokemon();
+    if (loadedGenerations.length === 0) {
+      loadGeneration(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Função para determinar a geração baseada no ID
-  const getGenerationByPokemonId = (id: number): number => {
-    if (id <= 151) return 1;      // Kanto
-    if (id <= 251) return 2;      // Johto  
-    if (id <= 386) return 3;      // Hoenn
-    if (id <= 493) return 4;      // Sinnoh
-    if (id <= 649) return 5;      // Unova
-    if (id <= 721) return 6;      // Kalos
-    if (id <= 809) return 7;      // Alola
-    if (id <= 905) return 8;      // Galar
-    return 9;                     // Paldea
+  // Se o usuário selecionar uma geração via header, garantir que ela seja carregada
+  useEffect(() => {
+    if (selectedGeneration && !loadedGenerations.some(g => g.id === selectedGeneration)) {
+      loadGeneration(selectedGeneration);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedGeneration]);
+
+  // Se o usuário selecionar apenas um tipo (sem geração e sem busca), carregar todos do tipo
+  useEffect(() => {
+    const shouldLoadType = selectedType && !selectedGeneration && !searchTerm;
+    if (!shouldLoadType) return;
+    // evitar reentrada
+    if (loadingTypeRef.current) return;
+
+    const loadType = async (typeName: string) => {
+      try {
+        loadingTypeRef.current = true;
+        setGlobalLoading(true);
+
+        // buscar lista por tipo
+        const typeResponse = await pokemonApi.getPokemonByType(typeName);
+        const entries: Array<{ pokemon: { name: string; url: string } }> = (typeResponse as any).pokemon || [];
+
+        const batchSize = 30;
+        const details: Pokemon[] = [];
+
+        for (let i = 0; i < entries.length; i += batchSize) {
+          const batch = entries.slice(i, i + batchSize);
+          const batchDetails = await Promise.all(
+            batch.map(async (item) => {
+              try {
+                const parts = item.pokemon.url.split('/').filter(Boolean);
+                const id = parts[parts.length - 1];
+                return await pokemonApi.getPokemon(id);
+              } catch (e) {
+                console.error('Erro ao buscar Pokémon detalhe (type):', e);
+                return null;
+              }
+            })
+          );
+
+          details.push(...batchDetails.filter(Boolean) as Pokemon[]);
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+
+        // substituir bloco carregado pelas gerações anteriores com o bloco do tipo
+        setLoadedGenerations([{ id: TYPE_BLOCK_ID, name: `Tipo: ${typeName}`, pokemons: details, loading: false, error: null }]);
+      } catch (err) {
+        console.error('Erro ao carregar Pokémon por tipo:', err);
+        setLoadedGenerations([{ id: TYPE_BLOCK_ID, name: `Tipo: ${selectedType}`, pokemons: [], loading: false, error: 'Erro ao carregar tipo' }]);
+      } finally {
+        loadingTypeRef.current = false;
+        setGlobalLoading(false);
+      }
+    };
+
+    loadType(selectedType as string);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedType, selectedGeneration, searchTerm]);
+
+  const handleLoadNextGeneration = () => {
+    const lastLoadedId = loadedGenerations.length ? loadedGenerations[loadedGenerations.length - 1].id : 0;
+    const nextGen = generations.find(g => g.id === lastLoadedId + 1);
+    if (nextGen) loadGeneration(nextGen.id);
   };
 
-  // Filtrar Pokémon baseado nos critérios
-  const filteredPokemon = pokemon.filter((p) => {
-    // Filtro por nome ou ID
-    const matchesSearch = !searchTerm || 
-      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.id.toString().includes(searchTerm) ||
-      p.id.toString().padStart(3, '0').includes(searchTerm);
+  const applyFilters = (pokemons: Pokemon[]) => {
+    return pokemons.filter(p => {
+      const matchesSearch = !searchTerm ||
+        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.id.toString().includes(searchTerm) ||
+        p.id.toString().padStart(3, '0').includes(searchTerm);
 
-    // Filtro por geração baseado no ID
-    const matchesGeneration = !selectedGeneration || 
-      getGenerationByPokemonId(p.id) === selectedGeneration;
+      const matchesType = !selectedType || p.types.some(t => t.type.name.toLowerCase() === selectedType.toLowerCase());
 
-    // Filtro por tipo
-    const matchesType = !selectedType || 
-      p.types.some(type => type.type.name.toLowerCase() === selectedType.toLowerCase());
-
-    return matchesSearch && matchesGeneration && matchesType;
-  });
-
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500"></div>
-        <span className="ml-3 text-gray-600">Carregando Pokémon...</span>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="text-center py-12">
-        <div className="text-red-500 mb-4">❌ {error}</div>
-        <button 
-          onClick={fetchPokemon}
-          className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors"
-        >
-          Tentar Novamente
-        </button>
-      </div>
-    );
-  }
-
-  if (filteredPokemon.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <div className="text-gray-500 text-lg mb-2">🔍 Nenhum Pokémon encontrado</div>
-        <p className="text-gray-400">Tente ajustar os filtros de busca</p>
-      </div>
-    );
-  }
+      return matchesSearch && matchesType;
+    });
+  };
 
   return (
     <div>
-      <div className="mb-6 text-center">
-        <p className="text-gray-600">
-          Mostrando <span className="font-semibold">{filteredPokemon.length}</span> Pokémon
-        </p>
+      <div className="mb-6">
+        {/* Mostrar apenas as gerações visíveis (filtradas pela seleção) */}
+        {(() => {
+          const visibleGens = loadedGenerations.filter(g => !selectedGeneration || g.id === selectedGeneration);
+          const visibleCount = visibleGens.reduce((acc, g) => acc + (applyFilters(g.pokemons).length || 0), 0);
+          const isTypeMode = !!selectedType && !selectedGeneration && !searchTerm;
+
+          if (isTypeMode) {
+            return (
+              <p className="text-gray-600">Mostrando {visibleCount} Pokémon{selectedType ? ` — Tipo: ${selectedType}` : ''}</p>
+            );
+          }
+
+          const gensText = visibleGens.length === 1 ? '1 geração' : `${visibleGens.length} gerações`;
+          return (
+            <p className="text-gray-600">Mostrando {visibleCount} Pokémon em {gensText}</p>
+          );
+        })()}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {filteredPokemon.map((p) => (
-          <PokemonCard
-            key={p.id}
-            id={p.id}
-            name={p.name}
-            image={p.sprites.other?.['official-artwork']?.front_default || p.sprites.front_default}
-            types={p.types.map(type => type.type.name)}
-            onClick={onPokemonClick}
-          />
+      <div className="space-y-10">
+        {loadedGenerations
+          .filter(gen => !selectedGeneration || gen.id === selectedGeneration)
+          .map((gen) => (
+          <section id={`generation-${gen.id}`} key={gen.id} className="bg-white p-4 rounded-lg shadow-sm">
+            <header className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-semibold">{gen.name}</h2>
+              <span className="text-sm text-gray-500">{applyFilters(gen.pokemons).length} Pokémon</span>
+            </header>
+
+            {gen.loading && (
+              <div className="flex items-center gap-3">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-500"></div>
+                <span className="text-gray-600">Carregando geração...</span>
+              </div>
+            )}
+
+            {gen.error && (
+              <div className="text-red-500">{gen.error}</div>
+            )}
+
+            {!gen.loading && gen.pokemons.length === 0 && !gen.error && (
+              <div className="text-gray-500">Nenhum Pokémon disponível para essa geração.</div>
+            )}
+
+            {!gen.loading && gen.pokemons.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {applyFilters(gen.pokemons).map(p => (
+                  <PokemonCard
+                    key={p.id}
+                    id={p.id}
+                    name={p.name}
+                    image={p.sprites.other?.['official-artwork']?.front_default || p.sprites.front_default}
+                    types={p.types.map(t => t.type.name)}
+                    onClick={onPokemonClick}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
         ))}
+      </div>
+
+      {/* Botão para carregar a próxima geração - posicionado abaixo das seções */}
+      <div className="mt-8 flex justify-center">
+        <button
+          onClick={handleLoadNextGeneration}
+          disabled={loadedGenerations.length >= generations.length || globalLoading}
+          className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 disabled:opacity-50"
+        >
+          {globalLoading ? 'Carregando...' : 'Próxima Geração'}
+        </button>
       </div>
     </div>
   );

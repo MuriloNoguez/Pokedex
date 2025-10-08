@@ -285,16 +285,16 @@ const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack, onPokemonClick }
       <div className="max-w-4xl mx-auto p-6">
         <div className="bg-white rounded-lg shadow-lg overflow-hidden">
           {/* Seção principal */}
-          <div className="md:flex">
+          <div className="flex flex-col md:flex-row">
             {/* Imagem */}
-            <div className="md:w-1/2 bg-gray-50 p-8 flex items-center justify-center">
-              <div className="text-center">
+            <div className="w-full md:w-1/2 bg-gray-50 p-6 md:p-8 flex items-center justify-center">
+              <div className="text-center w-full">
                 <img 
                   src={pokemon.sprites.other?.['official-artwork']?.front_default || pokemon.sprites.front_default}
                   alt={pokemon.name}
-                  className="w-64 h-64 object-contain mx-auto mb-4"
+                  className="w-40 h-40 sm:w-56 sm:h-56 md:w-64 md:h-64 object-contain mx-auto mb-4"
                 />
-                <div className="flex gap-2 justify-center mb-4">
+                <div className="flex gap-2 justify-center mb-4 flex-wrap">
                   {pokemon.types.map((type) => (
                     <span
                       key={type.type.name}
@@ -308,12 +308,12 @@ const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack, onPokemonClick }
             </div>
 
             {/* Informações */}
-            <div className="md:w-1/2 p-8">
-              <h2 className="text-3xl font-bold text-gray-800 capitalize mb-4">
+            <div className="w-full md:w-1/2 p-6 md:p-8">
+              <h2 className="text-2xl md:text-3xl font-bold text-gray-800 capitalize mb-4">
                 {pokemon.name}
               </h2>
               
-              <p className="text-gray-600 mb-6 leading-relaxed">
+              <p className="text-gray-600 mb-6 leading-relaxed text-sm md:text-base">
                 {getDescription()}
               </p>
 
@@ -353,30 +353,31 @@ const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack, onPokemonClick }
                 </div>
               </div>
 
-
             </div>
           </div>
 
-          {/* Árvore Evolutiva */}
+          {/* Árvore Evolutiva (responsiva) */}
           {evolutionChain.length > 1 && (
             <div className="p-8 border-t border-gray-200">
               <h3 className="text-xl font-semibold text-gray-800 mb-6">Cadeia Evolutiva</h3>
-              <div className="flex flex-wrap justify-center items-center gap-4">
+
+              {/* coluna em mobile, linha em desktop */}
+              <div className="flex flex-col md:flex-row md:items-center md:justify-center gap-4">
                 {evolutionChain.map((evo, index) => (
                   <React.Fragment key={evo.id}>
                     {/* Card do Pokémon na evolução */}
                     <div className="flex flex-col items-center">
                       <div 
-                        className={`bg-white rounded-lg shadow-md p-4 text-center hover:shadow-lg transition-all cursor-pointer transform hover:scale-105 ${
+                        className={`bg-white rounded-lg shadow-md p-3 md:p-4 text-center hover:shadow-lg transition-all cursor-pointer transform hover:scale-105 ${
                           evo.id === pokemonId ? 'ring-2 ring-blue-500 bg-blue-50' : ''
                         }`}
                         onClick={() => onPokemonClick?.(evo.id)}
                       >
-                        <div className="w-20 h-20 mx-auto mb-2 bg-gray-100 rounded-lg flex items-center justify-center">
+                        <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-20 md:h-20 mx-auto mb-2 bg-gray-100 rounded-lg flex items-center justify-center">
                           <img 
                             src={evo.image} 
                             alt={evo.name}
-                            className="w-16 h-16 object-contain"
+                            className="w-14 h-14 sm:w-16 sm:h-16 md:w-16 md:h-16 object-contain"
                             loading="lazy"
                           />
                         </div>
@@ -396,11 +397,12 @@ const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack, onPokemonClick }
                       </div>
                     </div>
 
-                    {/* Seta de evolução (não mostrar na última) */}
+                    {/* Setas: → em desktop, ↓ em mobile */}
                     {index < evolutionChain.length - 1 && (
-                      <div className="text-gray-400 text-2xl">
-                        →
-                      </div>
+                      <>
+                        <div className="hidden md:flex text-gray-400 text-2xl items-center justify-center mx-4">→</div>
+                        <div className="flex md:hidden text-gray-400 text-2xl items-center justify-center my-2" style={{height: '56px'}}>↓</div>
+                      </>
                     )}
                   </React.Fragment>
                 ))}
