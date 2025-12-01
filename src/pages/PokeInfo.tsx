@@ -1,59 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { pokemonApi, formatUtils } from '../utils/api';
+import type { Pokemon, PokemonSpecies } from '../types/pokemon';
 
-interface PokemonDetail {
-  id: number;
-  name: string;
-  height: number;
-  weight: number;
-  base_experience: number;
-  sprites: {
-    front_default: string;
-    front_shiny: string;
-    other?: {
-      'official-artwork'?: {
-        front_default: string;
-      };
-    };
-  };
-  types: Array<{
-    type: {
-      name: string;
-    };
-  }>;
-  stats: Array<{
-    base_stat: number;
-    stat: {
-      name: string;
-    };
-  }>;
-  abilities: Array<{
-    ability: {
-      name: string;
-    };
-    is_hidden: boolean;
-  }>;
-  species: {
-    url: string;
-  };
-}
-
-interface PokemonSpecies {
-  flavor_text_entries: Array<{
-    flavor_text: string;
-    language: {
-      name: string;
-    };
-  }>;
-  genera: Array<{
-    genus: string;
-    language: {
-      name: string;
-    };
-  }>;
-  evolution_chain: {
-    url: string;
-  };
-}
+const isAbortError = (err: unknown) =>
+  (err instanceof DOMException && err.name === 'AbortError') ||
+  (typeof err === 'object' && err !== null && 'name' in err && (err as { name?: string }).name === 'AbortError');
 
 interface EvolutionChain {
   chain: ChainLink;
@@ -98,7 +49,7 @@ interface PokeInfoProps {
 }
 
 const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack, onPokemonClick }) => {
-  const [pokemon, setPokemon] = useState<PokemonDetail | null>(null);
+  const [pokemon, setPokemon] = useState<Pokemon | null>(null);
   const [species, setSpecies] = useState<PokemonSpecies | null>(null);
   const [evolutionChain, setEvolutionChain] = useState<EvolutionPokemon[]>([]);
   const [loading, setLoading] = useState(true);
@@ -142,24 +93,7 @@ const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack, onPokemonClick }
 
   const getDescription = () => {
     if (!species) return 'Descrição não disponível';
-    
-    // Busca especificamente português do Brasil
-    const ptBrDescription = species.flavor_text_entries.find(
-      entry => entry.language.name === 'pt-BR'
-    );
-    
-    // Se não encontrar pt-BR, tenta português genérico
-    const ptDescription = species.flavor_text_entries.find(
-      entry => entry.language.name === 'pt'
-    );
-    
-    // Fallback para inglês se não tiver português
-    const enDescription = species.flavor_text_entries.find(
-      entry => entry.language.name === 'en'
-    );
-    
-    const description = ptBrDescription || ptDescription || enDescription;
-    return description ? description.flavor_text.replace(/\f/g, ' ').replace(/\n/g, ' ') : 'Descrição não disponível';
+    return formatUtils.getPokemonDescription(species);
   };
 
 
@@ -169,22 +103,23 @@ const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack, onPokemonClick }
     return matches ? parseInt(matches[1], 10) : 0;
   };
 
-  const processEvolutionChain = async (chain: ChainLink): Promise<EvolutionPokemon[]> => {
+  const processEvolutionChain = useCallback(async (chain: ChainLink, signal?: AbortSignal): Promise<EvolutionPokemon[]> => {
     const evolutionPokemon: EvolutionPokemon[] = [];
     
     const processChainLink = async (link: ChainLink) => {
-      const pokemonId = extractPokemonIdFromUrl(link.species.url);
+      if (signal?.aborted) return;
+      const pokemonIdFromUrl = extractPokemonIdFromUrl(link.species.url);
       
       try {
         // Buscar dados do Pokémon
-        const pokemonResponse = await fetch(`https://pokeapi.co/api/v2/pokemon/${pokemonId}`);
-        const pokemonData = await pokemonResponse.json();
+        const pokemonData = await pokemonApi.getPokemon(pokemonIdFromUrl, signal);
+        if (signal?.aborted) return;
         
         evolutionPokemon.push({
           id: pokemonData.id,
           name: pokemonData.name,
           image: pokemonData.sprites.other?.['official-artwork']?.front_default || pokemonData.sprites.front_default,
-          types: pokemonData.types.map((type: any) => type.type.name)
+          types: pokemonData.types.map(({ type }) => type.name)
         });
         
         // Processar evoluções
@@ -192,48 +127,61 @@ const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack, onPokemonClick }
           await processChainLink(evolution);
         }
       } catch (error) {
-        console.error(`Error fetching pokemon ${pokemonId}:`, error);
+        if (isAbortError(error)) return;
+        console.error(`Error fetching pokemon ${pokemonIdFromUrl}:`, error);
       }
     };
     
     await processChainLink(chain);
     return evolutionPokemon;
-  };
+  }, []);
 
   useEffect(() => {
+    const abortController = new AbortController();
+
     const fetchPokemonDetails = async () => {
       try {
         setLoading(true);
         setError(null);
-
+        setPokemon(null);
+        setSpecies(null);
+        setEvolutionChain([]);
 
         // Buscar dados do Pokémon
-        const pokemonResponse = await fetch(`https://pokeapi.co/api/v2/pokemon/${pokemonId}`);
-        const pokemonData = await pokemonResponse.json();
+        const pokemonData = await pokemonApi.getPokemon(pokemonId, abortController.signal);
+        if (abortController.signal.aborted) return;
         setPokemon(pokemonData);
 
         // Buscar dados da espécie
-        const speciesResponse = await fetch(pokemonData.species.url);
-        const speciesData = await speciesResponse.json();
+        const speciesData = await pokemonApi.getPokemonSpecies(pokemonData.species.name, abortController.signal);
+        if (abortController.signal.aborted) return;
         setSpecies(speciesData);
 
         // Buscar cadeia evolutiva
         if (speciesData.evolution_chain?.url) {
-          const evolutionResponse = await fetch(speciesData.evolution_chain.url);
-          const evolutionData: EvolutionChain = await evolutionResponse.json();
-          const evolutionPokemon = await processEvolutionChain(evolutionData.chain);
-          setEvolutionChain(evolutionPokemon);
+          const evolutionData = await pokemonApi.getResource<EvolutionChain>(speciesData.evolution_chain.url, abortController.signal);
+          if (!abortController.signal.aborted) {
+            const evolutionPokemon = await processEvolutionChain(evolutionData.chain, abortController.signal);
+            if (!abortController.signal.aborted) {
+              setEvolutionChain(evolutionPokemon);
+            }
+          }
         }
       } catch (err) {
+        if (isAbortError(err)) return;
         setError('Erro ao carregar detalhes do Pokémon');
         console.error('Error fetching Pokemon details:', err);
       } finally {
-        setLoading(false);
+        if (!abortController.signal.aborted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchPokemonDetails();
-  }, [pokemonId]);
+
+    return () => abortController.abort();
+  }, [pokemonId, processEvolutionChain]);
 
   if (loading) {
     return (
@@ -277,7 +225,7 @@ const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack, onPokemonClick }
             {pokemon.name}
           </h1>
           <span className="text-white/80">
-            #{pokemon.id.toString().padStart(3, '0')}
+            #{formatUtils.formatPokemonId(pokemon.id)}
           </span>
         </div>
       </div>
@@ -322,13 +270,13 @@ const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack, onPokemonClick }
                 <div className="text-center bg-gray-50 p-4 rounded-lg">
                   <p className="text-gray-500 text-sm">Altura</p>
                   <p className="text-xl font-bold text-gray-800">
-                    {(pokemon.height / 10).toFixed(1)}m
+                    {formatUtils.formatHeight(pokemon.height)}
                   </p>
                 </div>
                 <div className="text-center bg-gray-50 p-4 rounded-lg">
                   <p className="text-gray-500 text-sm">Peso</p>
                   <p className="text-xl font-bold text-gray-800">
-                    {(pokemon.weight / 10).toFixed(1)}kg
+                    {formatUtils.formatWeight(pokemon.weight)}
                   </p>
                 </div>
               </div>
@@ -434,9 +382,6 @@ const PokeInfo: React.FC<PokeInfoProps> = ({ pokemonId, onBack, onPokemonClick }
               ))}
             </div>
           </div>
-        {/* Árvore evolutiva */}
-        
-
         </div>
       </div>
     </div>

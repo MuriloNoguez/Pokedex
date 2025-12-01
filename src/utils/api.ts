@@ -6,12 +6,17 @@ import { config } from '../config/app';
 const { baseUrl: BASE_URL, cacheDuration: CACHE_DURATION, defaultLimit: DEFAULT_LIMIT, maxSearchResults: MAX_SEARCH_RESULTS, debugCalls: DEBUG_API } = config.api;
 
 // Cache com expiração
-interface CacheItem {
-  data: any;
+interface CacheItem<T = unknown> {
+  data: T;
   timestamp: number;
 }
 
-const cache = new Map<string, CacheItem>();
+const cache = new Map<string, CacheItem<unknown>>();
+
+const isAbortError = (error: unknown): boolean => (
+  (error instanceof DOMException && error.name === 'AbortError') ||
+  (typeof error === 'object' && error !== null && 'name' in error && (error as { name?: string }).name === 'AbortError')
+);
 
 // Função auxiliar para verificar se o cache ainda é válido
 function isCacheValid(item: CacheItem): boolean {
@@ -19,19 +24,23 @@ function isCacheValid(item: CacheItem): boolean {
 }
 
 // Função auxiliar para fazer requisições com cache
-async function fetchWithCache<T>(url: string): Promise<T> {
+async function fetchWithCache<T>(url: string, signal?: AbortSignal): Promise<T> {
+  if (signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
+
   // Verificar se existe no cache e ainda é válido
   if (cache.has(url)) {
-    const cacheItem = cache.get(url)!;
-    if (isCacheValid(cacheItem)) {
+    const cacheItem = cache.get(url) as CacheItem<T> | undefined;
+    if (cacheItem && isCacheValid(cacheItem)) {
       if (DEBUG_API) {
         console.log(`📦 Cache hit: ${url}`);
       }
       return cacheItem.data;
-    } else {
-      // Remove cache expirado
-      cache.delete(url);
     }
+
+    // Remove cache expirado
+    cache.delete(url);
   }
 
   try {
@@ -39,24 +48,32 @@ async function fetchWithCache<T>(url: string): Promise<T> {
       console.log(`🔄 Fetching: ${url}`);
     }
 
-    const response = await fetch(url);
+    const response = await fetch(url, { signal });
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     const data = await response.json();
     
     // Salvar no cache com timestamp
-    cache.set(url, {
+    const cacheItem: CacheItem<T> = {
       data,
       timestamp: Date.now()
-    });
+    };
+    cache.set(url, cacheItem);
 
     if (DEBUG_API) {
       console.log(`✅ Cached: ${url}`);
     }
 
     return data;
-  } catch (error) {
+  } catch (error: unknown) {
+    if (isAbortError(error)) {
+      if (DEBUG_API) {
+        console.log(`⚠️ Request aborted: ${url}`);
+      }
+      throw error;
+    }
+
     console.error(`❌ Error fetching data from ${url}:`, error);
     throw error;
   }
@@ -65,46 +82,51 @@ async function fetchWithCache<T>(url: string): Promise<T> {
 // Funções da API
 export const pokemonApi = {
   // Buscar lista de Pokémon com paginação
-  async getPokemonList(limit: number = DEFAULT_LIMIT, offset: number = 0): Promise<PokemonListResponse> {
+  async getPokemonList(limit: number = DEFAULT_LIMIT, offset: number = 0, signal?: AbortSignal): Promise<PokemonListResponse> {
     const url = `${BASE_URL}/pokemon?limit=${limit}&offset=${offset}`;
-    return fetchWithCache<PokemonListResponse>(url);
+    return fetchWithCache<PokemonListResponse>(url, signal);
   },
 
   // Buscar Pokémon específico por ID ou nome
-  async getPokemon(idOrName: string | number): Promise<Pokemon> {
+  async getPokemon(idOrName: string | number, signal?: AbortSignal): Promise<Pokemon> {
     const url = `${BASE_URL}/pokemon/${idOrName}`;
-    return fetchWithCache<Pokemon>(url);
+    return fetchWithCache<Pokemon>(url, signal);
   },
 
   // Buscar espécie do Pokémon (para descrição, geração, etc.)
-  async getPokemonSpecies(idOrName: string | number): Promise<PokemonSpecies> {
+  async getPokemonSpecies(idOrName: string | number, signal?: AbortSignal): Promise<PokemonSpecies> {
     const url = `${BASE_URL}/pokemon-species/${idOrName}`;
-    return fetchWithCache<PokemonSpecies>(url);
+    return fetchWithCache<PokemonSpecies>(url, signal);
   },
 
   // Buscar Pokémon por geração
-  async getPokemonByGeneration(generationId: number): Promise<Generation> {
+  async getPokemonByGeneration(generationId: number, signal?: AbortSignal): Promise<Generation> {
     const url = `${BASE_URL}/generation/${generationId}`;
-    return fetchWithCache<Generation>(url);
+    return fetchWithCache<Generation>(url, signal);
   },
 
   // Buscar Pokémon por tipo
-  async getPokemonByType(typeName: string): Promise<PokemonType> {
+  async getPokemonByType(typeName: string, signal?: AbortSignal): Promise<PokemonType> {
     const url = `${BASE_URL}/type/${typeName}`;
-    return fetchWithCache<PokemonType>(url);
+    return fetchWithCache<PokemonType>(url, signal);
+  },
+
+  // Buscar qualquer recurso direto por URL (útil para evolution_chain, etc)
+  async getResource<T>(url: string, signal?: AbortSignal): Promise<T> {
+    return fetchWithCache<T>(url, signal);
   },
 
   // Buscar múltiplos Pokémon de uma vez
-  async getMultiplePokemon(pokemonUrls: string[]): Promise<Pokemon[]> {
-    const promises = pokemonUrls.map(url => fetchWithCache<Pokemon>(url));
+  async getMultiplePokemon(pokemonUrls: string[], signal?: AbortSignal): Promise<Pokemon[]> {
+    const promises = pokemonUrls.map(url => fetchWithCache<Pokemon>(url, signal));
     return Promise.all(promises);
   },
 
   // Buscar Pokémon por nome (busca parcial)
-  async searchPokemonByName(searchTerm: string, limit: number = 1000): Promise<Pokemon[]> {
+  async searchPokemonByName(searchTerm: string, limit: number = 1000, signal?: AbortSignal): Promise<Pokemon[]> {
     try {
       // Primeiro, busca uma lista grande de Pokémon
-      const listResponse = await this.getPokemonList(limit, 0);
+      const listResponse = await this.getPokemonList(limit, 0, signal);
       
       // Filtra por nome
       const filteredResults = listResponse.results.filter(pokemon =>
@@ -113,7 +135,7 @@ export const pokemonApi = {
 
       // Busca os dados completos dos Pokémon filtrados (limitado pela env var)
       const pokemonPromises = filteredResults.slice(0, MAX_SEARCH_RESULTS).map(pokemon =>
-        this.getPokemon(pokemon.name)
+        this.getPokemon(pokemon.name, signal)
       );
 
       return Promise.all(pokemonPromises);
@@ -172,33 +194,30 @@ export const formatUtils = {
 
   // Obter descrição em português (ou inglês como fallback)
   getPokemonDescription: (species: PokemonSpecies): string => {
-    // Tentar encontrar descrição em português
-    let description = species.flavor_text_entries.find(
-      entry => entry.language.name === 'pt'
-    )?.flavor_text;
-
-    // Fallback para inglês se não encontrar português
-    if (!description) {
-      description = species.flavor_text_entries.find(
+    const description = species.flavor_text_entries.find(
+      entry => entry.language.name === 'pt-BR'
+    )?.flavor_text
+      || species.flavor_text_entries.find(
+        entry => entry.language.name === 'pt'
+      )?.flavor_text
+      || species.flavor_text_entries.find(
         entry => entry.language.name === 'en'
       )?.flavor_text;
-    }
 
-    // Limpar caracteres especiais
     return description ? description.replace(/\f/g, ' ').replace(/\n/g, ' ') : 'Descrição não disponível';
   },
 
   // Obter gênero em português
   getPokemonGenus: (species: PokemonSpecies): string => {
-    let genus = species.genera.find(
-      entry => entry.language.name === 'pt'
-    )?.genus;
-
-    if (!genus) {
-      genus = species.genera.find(
+    const genus = species.genera.find(
+      entry => entry.language.name === 'pt-BR'
+    )?.genus
+      || species.genera.find(
+        entry => entry.language.name === 'pt'
+      )?.genus
+      || species.genera.find(
         entry => entry.language.name === 'en'
       )?.genus;
-    }
 
     return genus || 'Pokémon';
   },

@@ -61,6 +61,9 @@ export interface PokemonSpecies {
     name: string;
     url: string;
   };
+  evolution_chain?: {
+    url: string;
+  };
   flavor_text_entries: Array<{
     flavor_text: string;
     language: {

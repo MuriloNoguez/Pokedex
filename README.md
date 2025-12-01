@@ -48,11 +48,26 @@ O deploy esta disponível em:
 
 ## Estrutura do .env
 
-O arquivo `.env` controla configurações como URL da API, Exemplo:
+Use o `.env` para ajustar comportamento sem mexer no código. Valores recomendados:
 
 ```env
 VITE_POKEMON_API_BASE_URL=https://pokeapi.co/api/v2
+VITE_API_CACHE_DURATION=300000
+VITE_DEFAULT_POKEMON_LIMIT=20
+VITE_MAX_POKEMON_SEARCH_RESULTS=50
+VITE_DEBUG_API_CALLS=false
+VITE_APP_NAME=MyPokedex
+VITE_APP_VERSION=1.0.0
+VITE_ENABLE_FAVORITES=false
+VITE_ENABLE_ADVANCED_SEARCH=false
+VITE_ENABLE_ANALYTICS=false
 ```
+
+- `VITE_API_CACHE_DURATION`: cache (ms) das respostas da PokeAPI (300000 = 5 min)
+- `VITE_DEFAULT_POKEMON_LIMIT`: limite padrão para listagens
+- `VITE_MAX_POKEMON_SEARCH_RESULTS`: máximo de itens retornados em buscas
+- `VITE_DEBUG_API_CALLS`: `true` para logar hits de cache e requisições
+- `VITE_ENABLE_*`: toggles opcionais para futuras features (mantém desligado por padrão)
 
 ## Scripts
 

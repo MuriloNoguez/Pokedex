@@ -113,7 +113,7 @@ const PokemonList: React.FC<PokemonListProps> = ({ searchTerm, selectedGeneratio
           console.warn('Scroll adjustment failed', e);
         }
       }, 100);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Erro ao carregar geração:', err);
       setLoadedGenerations(prev => prev.map(b => b.id === gen.id ? { ...b, loading: false, error: 'Erro ao carregar geração' } : b));
     } finally {
@@ -152,7 +152,7 @@ const PokemonList: React.FC<PokemonListProps> = ({ searchTerm, selectedGeneratio
 
         // buscar lista por tipo
         const typeResponse = await pokemonApi.getPokemonByType(typeName);
-        const entries: Array<{ pokemon: { name: string; url: string } }> = (typeResponse as any).pokemon || [];
+        const entries = typeResponse.pokemon ?? [];
 
         const batchSize = 30;
         const details: Pokemon[] = [];
@@ -212,26 +212,6 @@ const PokemonList: React.FC<PokemonListProps> = ({ searchTerm, selectedGeneratio
 
   return (
     <div>
-      <div className="mb-6">
-        {/* Mostrar apenas as gerações visíveis (filtradas pela seleção) */}
-        {(() => {
-          const visibleGens = loadedGenerations.filter(g => !selectedGeneration || g.id === selectedGeneration);
-          const visibleCount = visibleGens.reduce((acc, g) => acc + (applyFilters(g.pokemons).length || 0), 0);
-          const isTypeMode = !!selectedType && !selectedGeneration && !searchTerm;
-
-          if (isTypeMode) {
-            return (
-              <p className="text-gray-600">Mostrando {visibleCount} Pokémon{selectedType ? ` — Tipo: ${selectedType}` : ''}</p>
-            );
-          }
-
-          const gensText = visibleGens.length === 1 ? '1 geração' : `${visibleGens.length} gerações`;
-          return (
-            <p className="text-gray-600">Mostrando {visibleCount} Pokémon em {gensText}</p>
-          );
-        })()}
-      </div>
-
       <div className="space-y-10">
         {loadedGenerations
           .filter(gen => !selectedGeneration || gen.id === selectedGeneration)

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Header from './components/header'
 import PokemonList from './components/PokemonList'
 import PokeInfo from './pages/PokeInfo'
@@ -30,8 +30,18 @@ function App() {
     setSelectedPokemonId(null)
   }
 
+  // Ao aplicar filtros ou busca, rolar para o topo da página
+  const hasInteractedRef = useRef(false)
+  useEffect(() => {
+    if (!hasInteractedRef.current) {
+      hasInteractedRef.current = true
+      return
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [searchTerm, selectedGeneration, selectedType])
+
   // Se um Pokémon foi selecionado, mostrar a página de detalhes
-  if (selectedPokemonId) {
+  if (selectedPokemonId !== null) {
     return (
       <PokeInfo 
         pokemonId={selectedPokemonId} 
