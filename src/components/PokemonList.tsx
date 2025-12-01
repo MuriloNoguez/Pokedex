@@ -191,6 +191,19 @@ const PokemonList: React.FC<PokemonListProps> = ({ searchTerm, selectedGeneratio
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedType, selectedGeneration, searchTerm]);
 
+  // Se sair do modo de tipo (limpou tipo, selecionou geração ou fez busca), resetar lista para gerações
+  useEffect(() => {
+    const isTypeBlockLoaded = loadedGenerations.some(g => g.id === TYPE_BLOCK_ID);
+    const isTypeMode = !!selectedType && !selectedGeneration && !searchTerm;
+
+    if (!isTypeMode && isTypeBlockLoaded) {
+      setLoadedGenerations([]);
+      const firstGenToLoad = selectedGeneration ?? 1;
+      loadGeneration(firstGenToLoad);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedType, selectedGeneration, searchTerm]);
+
   const handleLoadNextGeneration = () => {
     const lastLoadedId = loadedGenerations.length ? loadedGenerations[loadedGenerations.length - 1].id : 0;
     const nextGen = generations.find(g => g.id === lastLoadedId + 1);
